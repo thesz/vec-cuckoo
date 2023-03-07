@@ -1,1 +1,3 @@
-# vec-cuckoo
+# Vector-based cuckoo hash table for Haskell
+
+
