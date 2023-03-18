@@ -19,24 +19,28 @@ import Data.IORef
 import qualified Data.Vector.Unboxed as UV
 import qualified Data.Vector.Unboxed.Mutable as UVM
 
-class Hashed a where
+-------------------------------------------------------------------------------
+-- Classes
 
-class Show a => MutableVector a where
+class MutableVector a where
 	data MutableVectorType a	-- allows for unboxed data, if fancy.
 	new :: Int -> IO (MutableVectorType a)
 	read :: MutableVectorType a -> Int -> IO a
 	write :: MutableVectorType a -> Int -> a -> IO ()
 	length :: MutableVectorType a -> Int
 
+class (Eq k, MutableVector k) => CuKey k where
+	hashes :: k -> (Int, Int)
+	emptyValue :: k			-- should not be equal to any non-empty value. cfe, if you have indices, reserve an index.
+
+-------------------------------------------------------------------------------
+-- Interface that may require tracking after store.
+
 data Cuckoo k a = Cuckoo
 	{ cuckooBucketShift		:: !Int
 	, cuckooKeyStore		:: !(MutableVectorType k)	-- these two of same length, which is power of 2.
 	, cuckooDataStore		:: !(MutableVectorType a)
 	}
-
-class (Eq k, MutableVector k) => CuKey k where
-	hashes :: k -> (Int, Int)
-	emptyValue :: k			-- should not be equal to any non-empty value. cfe, if you have indices, reserve an index.
 
 _emptyKeys :: CuKey k => Int -> IO (MutableVectorType k)
 _emptyKeys len = do
@@ -179,6 +183,9 @@ store cuckoo k a = do
 					write ds index a
 					return $ Just (k', a')
 
+-------------------------------------------------------------------------------
+-- IORef-based interface, slightly easier to work with.
+
 type CuckooRef k a = IORef (Cuckoo k a)
 
 newCuckooRef :: (MutableVector a, CuKey k) => IO (CuckooRef k a)
@@ -200,6 +207,9 @@ storeRef cuckooRef k a = do
 	c <- store c k a
 	writeIORef cuckooRef c
 
+-------------------------------------------------------------------------------
+-- Handy MutableVector instances.
+
 instance CuKey Int where
 	hashes k = (k, mod k 65537 * 100001 + div k 65537 * 3333333)
 	emptyValue = minBound
@@ -218,6 +228,11 @@ instance (MutableVector a, MutableVector b) => MutableVector (a, b) where
 	write (MV_Tup2 a b) i (x, y)  = write a i x >> write b i y
 	length (MV_Tup2 a _) = length a
 
+
+-------------------------------------------------------------------------------
+-- Testing section.
+
+{-
 data DummyKey = DummyKey Int deriving (Show)
 
 instance Eq DummyKey where
@@ -251,4 +266,4 @@ t2 = do
 		v <- lookupRef c (DummyKey i)
 		print (i, v)
 t = t2
-
+-}
